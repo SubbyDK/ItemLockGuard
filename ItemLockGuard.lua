@@ -1,7 +1,7 @@
 -- Locals
 local isDisenchanting = false
 
--- Helper function to print formatted messages to the default chat frame
+-- Helper function to print formatted messages to the default chat frame.
 local function PrintMsg(msg)
     if (DEFAULT_CHAT_FRAME) then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[ItemLockGuard]|r " .. msg)
