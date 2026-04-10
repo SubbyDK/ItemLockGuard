@@ -1,8 +1,0 @@
-## Interface: 11200
-## Title: ItemLockGuard
-## Notes: Prevents disenchanting locked items. Toggle lock with CTRL + Right-Click.
-## Author: SubbyDK
-## Version: 1.0
-## SavedVariablesPerCharacter: ItemLockGuard_LockedItems
-
-ItemLockGuard.lua

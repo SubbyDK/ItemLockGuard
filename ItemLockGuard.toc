@@ -1,0 +1,10 @@
+## Title: |cFFFFCC00ItemLockGuard|r|cFF00FF00 by Subby|r
+## Interface: 11200
+## Author: Subby
+## Version: 1.0
+## DefaultState: enabled
+## Notes: Prevents disenchanting and selling locked items. Toggle lock with CTRL + Right-Click.
+
+## SavedVariablesPerCharacter: ItemLockGuard_LockedItems
+
+ItemLockGuard.lua
