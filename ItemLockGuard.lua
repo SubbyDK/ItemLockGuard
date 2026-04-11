@@ -22,6 +22,81 @@ local function IsVendorActive()
 end
 
 -------------------------------------------------------------------------------
+-- LOCALIZATION
+-------------------------------------------------------------------------------
+-- Initialize with English defaults to prevent crashes on unknown locales
+-- Will cover:
+-- English - United States of America - enUS
+-- English - United Kingdom of Great Britain and Northern Ireland - enGB
+-- English - Taiwan - enTW
+-- English - (Mainland - China) - enCN
+
+local L = {
+    ["DISENCHANT"] = "Disenchant",
+    ["LOCKED_ERROR"] = "ITEM IS LOCKED!",
+    ["MSG_LOCKED"] = "Item |cffff0000Locked|r.",
+    ["MSG_UNLOCKED"] = "Item |cff00ff00Unlocked|r.",
+};
+
+local locale = GetLocale()
+
+-- Translation table for all supported WoW clients
+if (locale == "esES") or (locale == "esMX") then -- Spanish - Spain and Spanish - Mexico
+    L["DISENCHANT"] = "Desencantar";
+    L["LOCKED_ERROR"] = "¡EL OBJETO ESTÁ BLOQUEADO!";
+    L["MSG_LOCKED"] = "Objeto |cffff0000Bloqueado|r.";
+    L["MSG_UNLOCKED"] = "Objeto |cff00ff00Desbloqueado|r.";
+
+elseif (locale == "deDE") then -- German - Germany
+    L["DISENCHANT"] = "Entzaubern";
+    L["LOCKED_ERROR"] = "GEGENSTAND IST GESPERRT!";
+    L["MSG_LOCKED"] = "Gegenstand |cffff0000Gesperrt|r.";
+    L["MSG_UNLOCKED"] = "Gegenstand |cff00ff00Entsperrt|r.";
+
+elseif (locale == "frFR") then -- French - France
+    L["DISENCHANT"] = "Désenchanter";
+    L["LOCKED_ERROR"] = "L'OBJET EST VERROUILLÉ !";
+    L["MSG_LOCKED"] = "Objet |cffff0000Verrouillé|r.";
+    L["MSG_UNLOCKED"] = "Objet |cff00ff00Déverrouillé|r.";
+
+elseif (locale == "ptBR") or (locale == "ptPT") then -- Portuguese - Brazil and Portuguese - Portugal
+    L["DISENCHANT"] = "Desencantar";
+    L["LOCKED_ERROR"] = "O ITEM ESTÁ BLOQUEADO!";
+    L["MSG_LOCKED"] = "Item |cffff0000Bloqueado|r.";
+    L["MSG_UNLOCKED"] = "Item |cff00ff00Desbloqueado|r.";
+
+elseif (locale == "ruRU") then -- Russian - Russia
+    L["DISENCHANT"] = "Распыление";
+    L["LOCKED_ERROR"] = "ПРЕДМЕТ ЗАБЛОКИРОВАН!";
+    L["MSG_LOCKED"] = "Предмет |cffff0000Заблокирован|r.";
+    L["MSG_UNLOCKED"] = "Предмет |cff00ff00Разблокирован|r.";
+
+elseif (locale == "zhTW") then -- Chinese - Taiwan
+    L["DISENCHANT"] = "分解";
+    L["LOCKED_ERROR"] = "物品已鎖定！";
+    L["MSG_LOCKED"] = "物品 |cffff0000已鎖定|r。";
+    L["MSG_UNLOCKED"] = "物品 |cff00ff00已解鎖|r。";
+
+elseif (locale == "zhCN") then -- Chinese - (Mainland - China)
+    L["DISENCHANT"] = "分解";
+    L["LOCKED_ERROR"] = "物品已锁定！";
+    L["MSG_LOCKED"] = "物品 |cffff0000已锁定|r。";
+    L["MSG_UNLOCKED"] = "物品 |cff00ff00已解锁|r。";
+
+elseif (locale == "itIT") then -- Italian - Italy
+    L["DISENCHANT"] = "Disincanta";
+    L["LOCKED_ERROR"] = "L'OGGETTO È BLOCCATO!";
+    L["MSG_LOCKED"] = "Oggetto |cffff0000Bloccato|r.";
+    L["MSG_UNLOCKED"] = "Oggetto |cff00ff00Sbloccato|r.";
+
+elseif (locale == "koKR") then -- Korean - Republic of Korea
+    L["DISENCHANT"] = "마력 추출";
+    L["LOCKED_ERROR"] = "아이템이 잠겨 있습니다!";
+    L["MSG_LOCKED"] = "아이템 |cffff0000잠금|r.";
+    L["MSG_UNLOCKED"] = "아이템 |cff00ff00잠금 해제|r.";
+end
+
+-------------------------------------------------------------------------------
 -- DISENCHANT DETECTION (Vanilla WoW 1.12 API Logic)
 -------------------------------------------------------------------------------
 -- In 1.12, there is no direct way to query the cursor spell. 
@@ -31,7 +106,7 @@ end
 local _CastSpell = CastSpell
 CastSpell = function(id, book)
     local name = GetSpellName(id, book)
-    if (name == "Disenchant") then
+    if (name == L["DISENCHANT"]) then
         isDisenchanting = true
     else
         isDisenchanting = false
@@ -42,7 +117,8 @@ end
 -- Hook: Casting via Macros or Scripts
 local _CastSpellByName = CastSpellByName
 CastSpellByName = function(name, onSelf)
-    if (name and string.find(name, "Disenchant")) then
+    -- Using plain search (true) to avoid pattern matching issues with special characters
+    if (name and string.find(name, L["DISENCHANT"], 1, true)) then
         isDisenchanting = true
     else
         isDisenchanting = false
@@ -59,7 +135,7 @@ UseAction = function(slot, check, onSelf)
     local text = GameTooltipTextLeft1:GetText()
     GameTooltip:Hide()
     
-    if (text == "Disenchant") then
+    if (text == L["DISENCHANT"]) then
         isDisenchanting = true
     end
     _UseAction(slot, check, onSelf)
@@ -92,7 +168,6 @@ local function IsProtected(link)
     
     -- We only block if the user is currently Disenchanting OR at a Merchant/Vendor
     local blockAction = isDisenchanting or IsVendorActive()
-    
     if (not blockAction) then return false end
 
     local id = GetItemID(link)
@@ -110,7 +185,7 @@ end
 local _UseContainerItem = UseContainerItem
 UseContainerItem = function(bag, slot, onSelf)
     if (IsProtected(GetContainerItemLink(bag, slot))) then
-        UIErrorsFrame:AddMessage("ITEM IS LOCKED!", 1.0, 0.1, 0.1, 1.0)
+        UIErrorsFrame:AddMessage(L["LOCKED_ERROR"], 1.0, 0.1, 0.1, 1.0)
         if (SpellIsTargeting()) then SpellStopTargeting() end
         isDisenchanting = false
         return -- Prevents selling or disenchanting
@@ -122,7 +197,7 @@ end
 local _PickupContainerItem = PickupContainerItem
 PickupContainerItem = function(bag, slot)
     if (IsProtected(GetContainerItemLink(bag, slot))) then
-        UIErrorsFrame:AddMessage("ITEM IS LOCKED!", 1.0, 0.1, 0.1, 1.0)
+        UIErrorsFrame:AddMessage(L["LOCKED_ERROR"], 1.0, 0.1, 0.1, 1.0)
         if (SpellIsTargeting()) then SpellStopTargeting() end
         isDisenchanting = false
         return -- Prevents item from being picked up/applied to spell
@@ -134,7 +209,7 @@ end
 local _UseInventoryItem = UseInventoryItem
 UseInventoryItem = function(slot)
     if (IsProtected(GetInventoryItemLink("player", slot))) then
-        UIErrorsFrame:AddMessage("ITEM IS LOCKED!", 1.0, 0.1, 0.1, 1.0)
+        UIErrorsFrame:AddMessage(L["LOCKED_ERROR"], 1.0, 0.1, 0.1, 1.0)
         if (SpellIsTargeting()) then SpellStopTargeting() end
         isDisenchanting = false
         return
@@ -146,7 +221,7 @@ end
 local _PickupInventoryItem = PickupInventoryItem
 PickupInventoryItem = function(slot)
     if (IsProtected(GetInventoryItemLink("player", slot))) then
-        UIErrorsFrame:AddMessage("ITEM IS LOCKED!", 1.0, 0.1, 0.1, 1.0)
+        UIErrorsFrame:AddMessage(L["LOCKED_ERROR"], 1.0, 0.1, 0.1, 1.0)
         if (SpellIsTargeting()) then SpellStopTargeting() end
         isDisenchanting = false
         return
@@ -168,16 +243,16 @@ ContainerFrameItemButton_OnClick = function(button, ignoreShift)
         local id = GetItemID(link)
         
         if (id) then
-            -- Double check table existence
+            -- Double check table existence before writing
             if (not ItemLockGuard_LockedItems) then ItemLockGuard_LockedItems = {} end
             
             -- Toggle the item ID in the database
             if (ItemLockGuard_LockedItems[id]) then
                 ItemLockGuard_LockedItems[id] = nil
-                PrintMsg("Item |cff00ff00Unlocked|r.")
+                PrintMsg(L["MSG_UNLOCKED"])
             else
                 ItemLockGuard_LockedItems[id] = true
-                PrintMsg("Item |cffff0000Locked|r.")
+                PrintMsg(L["MSG_LOCKED"])
             end
             return -- Block standard right-click action (equipping/using)
         end
