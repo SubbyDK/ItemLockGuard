@@ -24,7 +24,7 @@ end
 -------------------------------------------------------------------------------
 -- LOCALIZATION
 -------------------------------------------------------------------------------
--- Initialize with English defaults to prevent crashes on unknown locales
+-- Initialize with English defaults to prevent crashes on unknown locales.
 -- Will cover:
 -- English - United States of America - enUS
 -- English - United Kingdom of Great Britain and Northern Ireland - enGB
