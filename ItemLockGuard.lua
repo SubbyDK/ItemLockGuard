@@ -1,7 +1,8 @@
--- Locals
+-- Global variables for database and state management
+ItemLockGuard_LockedItems = ItemLockGuard_LockedItems or {}
 local isDisenchanting = false
 
--- Helper function to print formatted messages to the default chat frame.
+-- Helper function to print formatted messages to the default chat frame
 local function PrintMsg(msg)
     if (DEFAULT_CHAT_FRAME) then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[ItemLockGuard]|r " .. msg)
@@ -75,7 +76,10 @@ EventFrame:SetScript("OnEvent", function()
     if (event == "SPELLCAST_STOP") then
         isDisenchanting = false
     elseif (event == "ADDON_LOADED" and arg1 == "ItemLockGuard") then
-        -- Maybe we need this later.
+        -- Ensure the database is a valid table upon loading
+        if (not ItemLockGuard_LockedItems) or (type(ItemLockGuard_LockedItems) ~= "table") then
+            ItemLockGuard_LockedItems = {}
+        end
     end
 end)
 
@@ -84,14 +88,8 @@ end)
 -------------------------------------------------------------------------------
 -- Determines if an item should be protected based on lock status and current activity
 local function IsProtected(link)
-    if (not link) then
-        return false
-    end
-    -- Ensure the database is a valid table.
-    if (not ItemLockGuard_LockedItems) or (type(ItemLockGuard_LockedItems) ~= "table") then
-        ItemLockGuard_LockedItems = {}
-    end
-
+    if (not link) then return false end
+    
     -- We only block if the user is currently Disenchanting OR at a Merchant/Vendor
     local blockAction = isDisenchanting or IsVendorActive()
     
@@ -157,3 +155,33 @@ PickupInventoryItem = function(slot)
 end
 
 -------------------------------------------------------------------------------
+-- TOGGLE LOCK HANDLER (CTRL + Right-Click)
+-------------------------------------------------------------------------------
+-- Hooks the bag item buttons to allow locking/unlocking via modifiers
+local _ContainerFrameItemButton_OnClick = ContainerFrameItemButton_OnClick
+ContainerFrameItemButton_OnClick = function(button, ignoreShift)
+    -- Trigger on CTRL + Right-Button
+    if ( button == "RightButton" and IsControlKeyDown() ) then
+        local bag = this:GetParent():GetID()
+        local slot = this:GetID()
+        local link = GetContainerItemLink(bag, slot)
+        local id = GetItemID(link)
+        
+        if (id) then
+            -- Double check table existence
+            if (not ItemLockGuard_LockedItems) then ItemLockGuard_LockedItems = {} end
+            
+            -- Toggle the item ID in the database
+            if (ItemLockGuard_LockedItems[id]) then
+                ItemLockGuard_LockedItems[id] = nil
+                PrintMsg("Item |cff00ff00Unlocked|r.")
+            else
+                ItemLockGuard_LockedItems[id] = true
+                PrintMsg("Item |cffff0000Locked|r.")
+            end
+            return -- Block standard right-click action (equipping/using)
+        end
+    end
+    -- Call the original Blizzard function for normal clicks
+    _ContainerFrameItemButton_OnClick(button, ignoreShift)
+end
