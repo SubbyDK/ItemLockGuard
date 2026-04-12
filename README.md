@@ -24,7 +24,7 @@ Always double-check your items before performing irreversible actions.
 * 🔒 **Item Locking:** Secure any item in your bags, bank, or character equipment.
 * 🚫 **Action Blocking:** Automatically intercepts Disenchanting or Selling if an item is locked.
 * 🔴 **Visual Feedback:** Displays a 🚫 on protected items for instant identification.
-* 📦 **Addon Compatibility:** Full support for **[pfUI](https://github.com/me0wg4ming/pfUI)** frames as well as standard Blizzard UI (other bag addons may also work).
+* 📦 **Addon Compatibility:** Full support for **[pfUI](https://github.com/me0wg4ming/pfUI)** frames as well as **standard Blizzard UI** (other bag addons may also work).
 * 🌍 **Global Support:** Localized for English, German, French, Spanish, Russian, Chinese, Italian, and Korean  
   (Note: Only English has been fully tested).
 
