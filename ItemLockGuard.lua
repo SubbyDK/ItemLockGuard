@@ -1,25 +1,8 @@
 -- Global variables for database and state management
 ItemLockGuard_LockedItems = ItemLockGuard_LockedItems or {}
 local isDisenchanting = false
-
--- Helper function to print formatted messages to the default chat frame
-local function PrintMsg(msg)
-    if (DEFAULT_CHAT_FRAME) then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[ItemLockGuard]|r " .. msg)
-    end
-end
-
--- Extracts a unique ItemID from a standard WoW item link using string parsing
-local function GetItemID(link)
-    if (not link) then return nil end
-    local _, _, id = string.find(link, "item:(%d+)")
-    return id
-end
-
--- Checks if the Merchant/Vendor window is currently open
-local function IsVendorActive()
-    return (MerchantFrame and MerchantFrame:IsVisible())
-end
+local logInTime = nil
+local AddonName = "ItemLockGuard"
 
 -------------------------------------------------------------------------------
 -- LOCALIZATION
@@ -40,7 +23,6 @@ local L = {
 
 local locale = GetLocale()
 
--- Translation table for all supported WoW clients
 if (locale == "esES") or (locale == "esMX") then -- Spanish - Spain and Spanish - Mexico
     L["DISENCHANT"] = "Desencantar";
     L["LOCKED_ERROR"] = "¡EL OBJETO ESTÁ BLOQUEADO!";
@@ -97,132 +79,238 @@ elseif (locale == "koKR") then -- Korean - Republic of Korea
 end
 
 -------------------------------------------------------------------------------
--- DISENCHANT DETECTION (Vanilla WoW 1.12 API Logic)
+-- UTILS
 -------------------------------------------------------------------------------
--- In 1.12, there is no direct way to query the cursor spell. 
--- We hook the casting functions to "flag" when Disenchant is activated.
+local function PrintMsg(msg)
+    if (DEFAULT_CHAT_FRAME) then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffFF8000[" .. AddonName .. "]|r " .. msg)
+    end
+end
 
--- Hook: Casting via Spellbook
+local function GetItemID(link)
+    if (not link) then
+        return nil
+    end
+    local _, _, id = string.find(link, "item:(%d+)")
+    return id
+end
+
+local function IsVendorActive()
+    return (MerchantFrame and MerchantFrame:IsVisible())
+end
+
+-------------------------------------------------------------------------------
+-- VISUALS
+-------------------------------------------------------------------------------
+local function UpdateButtonOverlay(button, link)
+    if (not button) or (type(button) ~= "table") or (not button.CreateTexture) then
+        return
+    end
+    
+    if (not button.lockIcon) then
+        button.lockIcon = button:CreateTexture(nil, "OVERLAY", nil, 7)
+        button.lockIcon:SetTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
+        button.lockIcon:SetWidth(12)
+        button.lockIcon:SetHeight(12)
+        button.lockIcon:SetPoint("TOPRIGHT", button, "TOPRIGHT", -2, -2)
+    end
+
+    local id = GetItemID(link)
+    if (id) and (ItemLockGuard_LockedItems[id]) then
+        button.lockIcon:SetVertexColor(1, 0.2, 0.2, 1)
+        button.lockIcon:Show()
+    else
+        button.lockIcon:Hide()
+    end
+end
+
+local function UpdateAllBagIcons()
+    -- 1. Scan pfUI & Blizzard Bank/Bags (-1 til 10)
+    for bag = -1, 10 do
+        for slot = 1, 40 do
+            local pfBtn = getglobal("pfBag"..bag.."item"..slot)
+            if (pfBtn) and (pfBtn:IsVisible()) then
+                UpdateButtonOverlay(pfBtn, GetContainerItemLink(bag, pfBtn:GetID()))
+            end
+        end
+    end
+
+    -- 2. Blizzard Bags (0-4)
+    for bag = 0, 4 do
+        local frame = getglobal("ContainerFrame"..(bag+1))
+        if (frame) and (frame:IsVisible()) then
+            for slot = 1, GetContainerNumSlots(bag) do
+                local button = getglobal("ContainerFrame"..(bag+1).."Item"..slot)
+                if (button) then
+                    UpdateButtonOverlay(button, GetContainerItemLink(bag, button:GetID()))
+                end
+            end
+        end
+    end
+
+    -- 3. Character Equipment
+    if (CharacterFrame) and (CharacterFrame:IsVisible()) then
+        local slots = {
+            [1]="HeadSlot", [2]="NeckSlot", [3]="ShoulderSlot", [4]="ShirtSlot", [5]="ChestSlot", 
+            [6]="WaistSlot", [7]="LegsSlot", [8]="FeetSlot", [9]="WristSlot", [10]="HandsSlot", 
+            [11]="Finger0Slot", [12]="Finger1Slot", [13]="Trinket0Slot", [14]="Trinket1Slot", 
+            [15]="BackSlot", [16]="MainHandSlot", [17]="SecondaryHandSlot", [18]="RangedSlot", [19]="TabardSlot"
+        }
+        for i, slotName in pairs(slots) do
+            local charBtn = getglobal("Character"..slotName)
+            if (charBtn) then 
+                UpdateButtonOverlay(charBtn, GetInventoryItemLink("player", i)) 
+            end
+        end
+    end
+end
+
+-------------------------------------------------------------------------------
+-- CLICK LOGIC
+-------------------------------------------------------------------------------
+local function ToggleLockByButton(btn)
+    if (not btn) then
+        return
+    end
+    local bag = btn:GetParent():GetID()
+    local slot = btn:GetID()
+    
+    local pName = btn:GetParent():GetName()
+    if (pName == "pfBag-1") then
+        bag = -1
+    end
+
+    local link = GetContainerItemLink(bag, slot)
+    local id = GetItemID(link)
+    
+    if (id) then
+        ItemLockGuard_LockedItems[id] = not ItemLockGuard_LockedItems[id]
+        if (not ItemLockGuard_LockedItems[id]) then
+            ItemLockGuard_LockedItems[id] = nil
+        end
+        PrintMsg(ItemLockGuard_LockedItems[id] and L["MSG_LOCKED"] or L["MSG_UNLOCKED"])
+        UpdateAllBagIcons()
+        return true
+    end
+    return false
+end
+
+local function ApplyHooksToButtons()
+    for bag = -1, 10 do
+        for slot = 1, 40 do
+            local btn = getglobal("pfBag"..bag.."item"..slot)
+            if (btn) and (not btn.ItemLockHooked) then
+                local old_OnClick = btn:GetScript("OnClick")
+                btn:SetScript("OnClick", function()
+                    if (arg1 == "RightButton") and (IsControlKeyDown()) then
+                        ToggleLockByButton(this)
+                        return
+                    end
+                    if (old_OnClick) then
+                        old_OnClick()
+                    end
+                end)
+                btn.ItemLockHooked = true
+            end
+        end
+    end
+end
+
+-------------------------------------------------------------------------------
+-- PROTECTION & HOOKS
+-------------------------------------------------------------------------------
+local function IsProtected(link)
+    if (not link) then
+        return false
+    end
+    
+    -- Check if protection is needed (DE active or Vendor open)
+    if (isDisenchanting) or (IsVendorActive()) then
+        local id = GetItemID(link)
+        if (id) and (ItemLockGuard_LockedItems[id]) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Disenchant hooks
 local _CastSpell = CastSpell
 CastSpell = function(id, book)
     local name = GetSpellName(id, book)
     if (name == L["DISENCHANT"]) then
         isDisenchanting = true
-    else
-        isDisenchanting = false
     end
     _CastSpell(id, book)
 end
 
--- Hook: Casting via Macros or Scripts
 local _CastSpellByName = CastSpellByName
 CastSpellByName = function(name, onSelf)
-    -- Using plain search (true) to avoid pattern matching issues with special characters
-    if (name and string.find(name, L["DISENCHANT"], 1, true)) then
+    if (name) and (string.find(name, L["DISENCHANT"], 1, true)) then
         isDisenchanting = true
-    else
-        isDisenchanting = false
     end
     _CastSpellByName(name, onSelf)
 end
 
--- Hook: Using an action from the Action Bar
 local _UseAction = UseAction
 UseAction = function(slot, check, onSelf)
-    -- Scan the action tooltip to see if the button is the Disenchant spell
     GameTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
     GameTooltip:SetAction(slot)
     local text = GameTooltipTextLeft1:GetText()
     GameTooltip:Hide()
-    
     if (text == L["DISENCHANT"]) then
         isDisenchanting = true
     end
     _UseAction(slot, check, onSelf)
 end
 
--------------------------------------------------------------------------------
--- EVENTS AND DATABASE LOADING
--------------------------------------------------------------------------------
-local EventFrame = CreateFrame("Frame")
-EventFrame:RegisterEvent("SPELLCAST_STOP") -- Reset flag when spell is finished or cancelled
-EventFrame:RegisterEvent("ADDON_LOADED")   -- Handle database initialization
-
-EventFrame:SetScript("OnEvent", function()
-    if (event == "SPELLCAST_STOP") then
-        isDisenchanting = false
-    elseif (event == "ADDON_LOADED" and arg1 == "ItemLockGuard") then
-        -- Ensure the database is a valid table upon loading
-        if (not ItemLockGuard_LockedItems) or (type(ItemLockGuard_LockedItems) ~= "table") then
-            ItemLockGuard_LockedItems = {}
-        end
-    end
-end)
-
--------------------------------------------------------------------------------
--- CORE PROTECTION LOGIC
--------------------------------------------------------------------------------
--- Determines if an item should be protected based on lock status and current activity
-local function IsProtected(link)
-    if (not link) then return false end
-    
-    -- We only block if the user is currently Disenchanting OR at a Merchant/Vendor
-    local blockAction = isDisenchanting or IsVendorActive()
-    if (not blockAction) then return false end
-
-    local id = GetItemID(link)
-    if (id and ItemLockGuard_LockedItems[id]) then
-        return true
-    end
-    return false
-end
-
--------------------------------------------------------------------------------
--- INTERACTION HOOKS (Blocking Logic)
--------------------------------------------------------------------------------
-
--- Hook: Interaction with items in Bags (Right-click or Use)
+-- Interaction Hooks
 local _UseContainerItem = UseContainerItem
 UseContainerItem = function(bag, slot, onSelf)
     if (IsProtected(GetContainerItemLink(bag, slot))) then
         UIErrorsFrame:AddMessage(L["LOCKED_ERROR"], 1.0, 0.1, 0.1, 1.0)
-        if (SpellIsTargeting()) then SpellStopTargeting() end
+        if (SpellIsTargeting()) then
+            SpellStopTargeting()
+        end
         isDisenchanting = false
-        return -- Prevents selling or disenchanting
+        return 
     end
     _UseContainerItem(bag, slot, onSelf)
 end
 
--- Hook: Dragging items or clicking them with a spell cursor (Bags)
 local _PickupContainerItem = PickupContainerItem
 PickupContainerItem = function(bag, slot)
     if (IsProtected(GetContainerItemLink(bag, slot))) then
         UIErrorsFrame:AddMessage(L["LOCKED_ERROR"], 1.0, 0.1, 0.1, 1.0)
-        if (SpellIsTargeting()) then SpellStopTargeting() end
+        if (SpellIsTargeting()) then
+            SpellStopTargeting()
+        end
         isDisenchanting = false
-        return -- Prevents item from being picked up/applied to spell
+        return 
     end
     _PickupContainerItem(bag, slot)
 end
 
--- Hook: Interaction with equipped gear (Character Frame)
 local _UseInventoryItem = UseInventoryItem
 UseInventoryItem = function(slot)
     if (IsProtected(GetInventoryItemLink("player", slot))) then
         UIErrorsFrame:AddMessage(L["LOCKED_ERROR"], 1.0, 0.1, 0.1, 1.0)
-        if (SpellIsTargeting()) then SpellStopTargeting() end
+        if (SpellIsTargeting()) then
+            SpellStopTargeting()
+        end
         isDisenchanting = false
         return
     end
     _UseInventoryItem(slot)
 end
 
--- Hook: Picking up or applying spell cursor to equipped gear
 local _PickupInventoryItem = PickupInventoryItem
 PickupInventoryItem = function(slot)
     if (IsProtected(GetInventoryItemLink("player", slot))) then
         UIErrorsFrame:AddMessage(L["LOCKED_ERROR"], 1.0, 0.1, 0.1, 1.0)
-        if (SpellIsTargeting()) then SpellStopTargeting() end
+        if (SpellIsTargeting()) then
+            SpellStopTargeting()
+        end
         isDisenchanting = false
         return
     end
@@ -230,33 +318,55 @@ PickupInventoryItem = function(slot)
 end
 
 -------------------------------------------------------------------------------
--- TOGGLE LOCK HANDLER (CTRL + Right-Click)
+-- INITIALIZATION & EVENT LOOP
 -------------------------------------------------------------------------------
--- Hooks the bag item buttons to allow locking/unlocking via modifiers
+local EventFrame = CreateFrame("Frame")
+EventFrame:RegisterEvent("ADDON_LOADED")
+EventFrame:RegisterEvent("BAG_UPDATE")
+EventFrame:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
+EventFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
+EventFrame:RegisterEvent("SPELLCAST_STOP")
+EventFrame:RegisterEvent("SPELLCAST_INTERRUPTED")
+
+local loopTimer = 0
+EventFrame:SetScript("OnEvent", function()
+    if (event == "ADDON_LOADED") and (arg1 == AddonName) then
+        if (not ItemLockGuard_LockedItems) or (type(ItemLockGuard_LockedItems) ~= "table") then
+            ItemLockGuard_LockedItems = {}
+        end
+        logInTime = GetTime()
+    elseif (event == "SPELLCAST_STOP") or (event == "SPELLCAST_INTERRUPTED") then
+        isDisenchanting = false
+    end
+    UpdateAllBagIcons()
+    ApplyHooksToButtons()
+end)
+
+EventFrame:SetScript("OnUpdate", function()
+    if (logInTime) and (GetTime() > logInTime + 3) then
+        UpdateAllBagIcons()
+        logInTime = nil
+        DEFAULT_CHAT_FRAME:AddMessage("|cffFF8000" .. AddonName .. "|r" .. " by " .. "|cFFFFF468" .. "Subby" .. "|r" .. " is loaded.");
+    end
+
+    loopTimer = loopTimer + arg1
+    if (loopTimer > 0.5) then
+        if (BankFrame and BankFrame:IsVisible()) or (CharacterFrame and CharacterFrame:IsVisible()) then
+            UpdateAllBagIcons()
+            if (BankFrame:IsVisible()) then
+                ApplyHooksToButtons()
+            end
+        end
+        loopTimer = 0
+    end
+end)
+
 local _ContainerFrameItemButton_OnClick = ContainerFrameItemButton_OnClick
 ContainerFrameItemButton_OnClick = function(button, ignoreShift)
-    -- Trigger on CTRL + Right-Button
-    if ( button == "RightButton" and IsControlKeyDown() ) then
-        local bag = this:GetParent():GetID()
-        local slot = this:GetID()
-        local link = GetContainerItemLink(bag, slot)
-        local id = GetItemID(link)
-        
-        if (id) then
-            -- Double check table existence before writing
-            if (not ItemLockGuard_LockedItems) then ItemLockGuard_LockedItems = {} end
-            
-            -- Toggle the item ID in the database
-            if (ItemLockGuard_LockedItems[id]) then
-                ItemLockGuard_LockedItems[id] = nil
-                PrintMsg(L["MSG_UNLOCKED"])
-            else
-                ItemLockGuard_LockedItems[id] = true
-                PrintMsg(L["MSG_LOCKED"])
-            end
-            return -- Block standard right-click action (equipping/using)
+    if (button == "RightButton" and IsControlKeyDown()) then
+        if (ToggleLockByButton(this)) then
+            return
         end
     end
-    -- Call the original Blizzard function for normal clicks
     _ContainerFrameItemButton_OnClick(button, ignoreShift)
 end
