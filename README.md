@@ -14,7 +14,8 @@ This tool is built to ensure that no one else (and especially not me) has to los
 
 ## ⚠️ Disclaimer
 
-**Use at your own risk.** While this addon is designed to prevent accidental disenchanting and selling, the author is not responsible for any lost items, bugs, or unintended behavior.  
+**Use at your own risk.**  
+While this addon is designed to prevent accidental disenchanting and selling, the author is not responsible for any lost items, bugs, or unintended behavior.  
 Always double-check your items before performing irreversible actions.
 
 ---
